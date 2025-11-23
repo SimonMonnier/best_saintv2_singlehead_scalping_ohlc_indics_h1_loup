@@ -705,7 +705,12 @@ def build_observation(position_dir: int, entry_price: float, volume_net: float):
             print(f"[WARN] Dimension mismatch normalisation : feats={feats.shape[1]}, mean={LIVE_MEAN.shape[0]}")
 
     last_price = float(df_lb["close"].iloc[-1])
-    last_atr14 = float(df_lb["atr_14"].iloc[-1]) if "atr_14" in df_lb.columns else 0.0
+
+    # Utiliser l'ATR de la bougie *précédente* pour le sizing et le SL/TP
+    if "atr_14" in df_lb.columns and len(df_lb) >= 2:
+        last_atr14 = float(df_lb["atr_14"].iloc[-2])
+    else:
+        last_atr14 = 0.0
 
     # Unrealized PnL latent (comme l'env) normalisé par initial_capital
     if position_dir != 0 and entry_price > 0.0 and volume_net > 0.0:
@@ -839,8 +844,9 @@ def apply_decision(policy: SAINTPolicySingleHead):
         mask = build_mask_from_pos_scalar(pos_dir, device)
         logits_masked = logits_single.masked_fill(~mask, MASK_VALUE)
 
-        eps = 0.05 if live_step_count < cfg.eps_warmup_steps else 0.0
-        a = epsilon_greedy_from_logits(logits_masked.unsqueeze(0), eps=eps)
+        # En production : aucune exploration, on suit 100 % la policy
+    eps = 0.0
+    a = epsilon_greedy_from_logits(logits_masked.unsqueeze(0), eps=eps)
 
     # Mapping agent action -> décision + risk_scale (identique à training)
     if pos_dir == 0:
