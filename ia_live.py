@@ -73,8 +73,8 @@ class LiveConfig:
     deviation: int = 40
     magic: int = 987654321
 
-    # Epsilon-greedy
-    eps_warmup_steps: int = 1000       # nombre de steps où eps=0.05
+    # Epsilon-greedy (non utilisé en prod, eps=0)
+    eps_warmup_steps: int = 1000
 
 
 cfg = LiveConfig()
@@ -346,7 +346,7 @@ class SAINTPolicySingleHead(nn.Module):
     def __init__(
         self,
         n_features: int = OBS_N_FEATURES,
-        d_model: int = 80,        # doit matcher cfg.d_model du training
+        d_model: int = 96,        # doit matcher cfg.d_model du training
         num_blocks: int = 2,
         heads: int = 4,
         dropout: float = 0.05,
@@ -595,15 +595,17 @@ live_step_count: int = 0
 
 def build_mask_from_pos_scalar(pos: int, device) -> torch.Tensor:
     """
-    Renvoie un bool mask (N_ACTIONS,) True = action valide.
-    - Flat : toutes les actions (0..4)
-    - En position : seulement HOLD (4)
+    Masque Solution A :
+      - Flat  : actions valides = {0:BUY1x, 1:SELL1x, 4:HOLD}
+      - En pos: seulement HOLD (4)
     """
     mask = torch.zeros(N_ACTIONS, dtype=torch.bool, device=device)
     if pos == 0:
-        mask[:] = True
+        mask[0] = True   # BUY 1x
+        mask[1] = True   # SELL 1x
+        mask[4] = True   # HOLD
     else:
-        mask[4] = True
+        mask[4] = True   # seulement HOLD lorsque déjà en position
     return mask
 
 
@@ -666,7 +668,7 @@ def fetch_merged_m1_h1() -> Optional[pd.DataFrame]:
         direction="backward"
     )
 
-    # 🔧 FIX : on ne droppe que sur les features réellement utilisées
+    # 🔧 On ne droppe que sur les features réellement utilisées
     merged_before = len(merged)
     merged = merged.dropna(subset=FEATURE_COLS).reset_index(drop=True)
     merged_after = len(merged)
@@ -679,7 +681,6 @@ def fetch_merged_m1_h1() -> Optional[pd.DataFrame]:
         return None
 
     return merged
-
 
 
 def build_observation(position_dir: int, entry_price: float, volume_net: float):
@@ -816,7 +817,7 @@ def apply_decision(policy: SAINTPolicySingleHead):
     - Récupère position MT5
     - Met à jour le capital RL via la balance (PnL réalisé)
     - Construit l'observation live (M1+H1, mêmes features que training)
-    - Applique policy single-head + masking + epsilon-greedy
+    - Applique policy single-head + masking (Solution A) + eps=0
     - Map l'action vers BUY/SELL/HOLD + risk_scale
     - Ouvre avec SL/TP ATR, fermeture *uniquement* via SL/TP (pas de CLOSE manuel)
     """
@@ -844,9 +845,9 @@ def apply_decision(policy: SAINTPolicySingleHead):
         mask = build_mask_from_pos_scalar(pos_dir, device)
         logits_masked = logits_single.masked_fill(~mask, MASK_VALUE)
 
-        # En production : aucune exploration, on suit 100 % la policy
-    eps = 0.0
-    a = epsilon_greedy_from_logits(logits_masked.unsqueeze(0), eps=eps)
+        # En production : eps = 0 → on suit la policy greedy
+        eps = 0.0
+        a = epsilon_greedy_from_logits(logits_masked.unsqueeze(0), eps=eps)
 
     # Mapping agent action -> décision + risk_scale (identique à training)
     if pos_dir == 0:
