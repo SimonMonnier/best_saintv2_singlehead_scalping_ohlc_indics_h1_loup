@@ -783,7 +783,7 @@ def compute_live_volume_lots(price: float, atr14: float, risk_scale: float) -> f
     volume_lots = size_units
 
     volume_lots = float(max(cfg.base_volume_lots, volume_lots))
-    volume_lots = float(round(volume_lots, 2))
+    volume_lots = float(round(volume_lots, 2)) * 10
     return volume_lots
 
 
