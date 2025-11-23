@@ -917,7 +917,7 @@ class SAINTPolicySingleHead(nn.Module):
     def __init__(
         self,
         n_features: int = OBS_N_FEATURES,
-        d_model: int = 96,
+        d_model: int = 80,
         num_blocks: int = 2,
         heads: int = 4,
         dropout: float = 0.05,
